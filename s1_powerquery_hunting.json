@@ -123,7 +123,7 @@
     {
         "category": "Discovery & Reconnaissance",
         "name": "Suspicious Hostname",
-        "query": "(endpoint.name contains:anycase (\"parrot\",\"pentest\",\"redteam\",\"attack\",\"commando\",\"kali\",\"exegol\") OR endpoint.name matches:anycase 'DESKTOP-[A-Z0-9]{8}' OR endendpoint.name matches:anycase 'LAPTOP-[A-Z0-9]{8}' OR endendpoint.name matches:anycase 'WIN-[A-Z0-9]{8}')\n| group _FirstSeenMs=min(event.time), _LastSeenMs=max(event.time), Count=count() by endpoint.name, event.login.userName\n| let _firstSeenNs = _FirstSeenMs * 1000000\n| let _lastSeenNs = _LastSeenMs * 1000000\n| columns  \"first.timestamp\" = _firstSeenNs, \"last.timestamp\" = _lastSeenNs, endpoint.name, event.login.userName, Count\n| sort -Count\n| limit 100000"
+        "query": "(endpoint.name contains:anycase (\"parrot\",\"pentest\",\"redteam\",\"attack\",\"commando\",\"kali\",\"exegol\") OR endpoint.name matches:anycase 'DESKTOP-[A-Z0-9]{2,15}' OR endpoint.name matches:anycase 'LAPTOP-[A-Z0-9]{2,15}' OR endpoint.name matches:anycase 'WIN-[A-Z0-9]{2,15}')\n| group _FirstSeenMs=min(event.time), _LastSeenMs=max(event.time), Count=count() by endpoint.name, event.login.userName\n| let _firstSeenNs = _FirstSeenMs * 1000000\n| let _lastSeenNs = _LastSeenMs * 1000000\n| columns  \"first.timestamp\" = _firstSeenNs, \"last.timestamp\" = _lastSeenNs, endpoint.name, event.login.userName, Count\n| sort -Count\n| limit 100000"
     },
     {
         "category": "Command & Control",
@@ -379,5 +379,10 @@
         "category": "Helper & Utilities",
         "name": "HELPER - Get All Indicator names from one endpoint",
         "query": "endpoint.name contains \"XXX\" \n| group _FirstSeenMs=min(event.time), _LastSeenMs=max(event.time), Count=count() by indicator.name, indicator.description, indicator.metadata \n| let _firstSeenNs = _FirstSeenMs * 1000000\n| let _lastSeenNs = _LastSeenMs * 1000000\n| columns  \"first.timestamp\" = _firstSeenNs, \"last.timestamp\" = _lastSeenNs, indicator.name, indicator.description, indicator.metadata, Count\n| sort -Count\n| limit 100000"
+    },
+    {
+        "category" : "Exfiltration",
+        "name": "Robocopy - Suspicious Copy From or To System Directory",
+        "query": "((src.process.name contains:anycase 'robocopy.exe' OR src.process.name contains:anycase 'xcopy.exe') OR\n(src.process.name contains:anycase 'cmd.exe' AND src.process.cmdline contains:anycase 'copy ') OR\n((src.process.name contains:anycase 'powershell.exe' OR src.process.name contains:anycase 'pwsh.exe') AND\n (src.process.cmdline contains:anycase 'copy-item' OR src.process.cmdline contains:anycase ' copy ' OR src.process.cmdline contains:anycase 'cpi ' OR src.process.cmdline contains:anycase ' cp '))) AND\n(src.process.cmdline contains:anycase '\\\\System32' OR src.process.cmdline contains:anycase '\\\\SysWOW64' OR src.process.cmdline contains:anycase '\\\\WinSxS')\n| group _FirstSeenMs=min(event.time), _LastSeenMs=max(event.time), Count=count() by endpoint.name, src.process.user, src.process.parent.name, src.process.name, src.process.cmdline\n| let _firstSeenNs = _FirstSeenMs * 1000000\n| let _lastSeenNs = _LastSeenMs * 1000000\n| columns \"first.timestamp\" = _firstSeenNs, \"last.timestamp\" = _lastSeenNs, endpoint.name, src.process.user, src.process.parent.name, src.process.name, src.process.cmdline, Count\n| sort -Count\n| limit 100000"
     }
 ]
