@@ -387,7 +387,7 @@
     },
     {
         "category" : "Command & Control",
-        "name": "Remote installation of custom chrome extensions",
-        "query": "endpoint.os = \"windows\" #filepath contains:anycase \"secure preferences\" event.type contains:anycase (\"File Creation\",\"File Modification\") NOT (src.process.name contains:anycase (\"chrome\",\"edege\",\"spotify\",\"opera\",\"brave\",\"msedgewebview2\"))\n| group _FirstSeenMs=min(event.time), _LastSeenMs=max(event.time), Count=count() by endpoint.name, src.process.user, src.process.parent.name, src.process.name, src.process.cmdline, src.process.image.path\n| let _firstSeenNs = _FirstSeenMs * 1000000\n| let _lastSeenNs = _LastSeenMs * 1000000\n| columns  \"first.timestamp\" = _firstSeenNs, \"last.timestamp\" = _lastSeenNs, endpoint.name, src.process.user, src.process.parent.name, src.process.name, src.process.cmdline, src.process.image.path, Count\n| sort -Count\n| limit 100000"
+        "name": "Remote installation of custom chromium extensions",
+        "query": "endpoint.os = \"windows\" AND event.type contains:anycase (\"File Creation\", \"File Modification\") AND (tgt.file.path matches:anycase \"\\\\\\\\Secure Preferences$\" OR tgt.file.path matches:anycase \"\\\\\\\\Preferences$\") NOT(src.process.name contains:anycase (\"chrome\",\"edege\",\"spotify\",\"opera\",\"brave\",\"msedgewebview2\",\"HPWPD.exe\"))\n| group _FirstSeenMs=min(event.time), _LastSeenMs=max(event.time), Count=count() by endpoint.name, src.process.user, src.process.parent.name, src.process.name, src.process.cmdline, tgt.file.path\n| let _firstSeenNs = _FirstSeenMs * 1000000\n| let _lastSeenNs = _LastSeenMs * 1000000\n| columns \"first.timestamp\" = _firstSeenNs, \"last.timestamp\" = _lastSeenNs, endpoint.name, src.process.user, src.process.parent.name, src.process.name, src.process.cmdline, tgt.file.path, Count\n| sort -Count\n| limit 100000"
     }
 ]
