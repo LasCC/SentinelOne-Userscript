@@ -8,7 +8,7 @@
 // @downloadURL  https://raw.githubusercontent.com/LasCC/SentinelOne-Userscript/refs/heads/master/userscript.js
 // @updateURL    https://raw.githubusercontent.com/LasCC/SentinelOne-Userscript/refs/heads/master/userscript.js
 // @grant        GM_xmlhttpRequest
-// @icon         data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2077.09%2095.88%22%20xmlns%3Axlink%3D%22http%3A//www.w3.org/1999/xlink%22%3E%0A%20%3Cdefs%3E%0A%20%20%3Cstyle%3E%0A%20%20%20.cls-1%7Bfill%3A%236b0aea%3Bfill-rule%3Aevenodd%3B%7D%0A%20%20%3C/style%3E%0A%20%3C/defs%3E%0A%20%3Cg%20id%3D%22Layer_2%22%20data-name%3D%22Layer%202%22%3E%0A%20%20%3Cg%20id%3D%22ART%22%3E%0A%20%20%20%3Cpath%20class%3D%22cls-1%22%20d%3D%22M32.08%2C0H45V77.25H32.08ZM48.13%2C95.88l12.91-8V21a32.21%2C32.21%2C0%2C0%2C0-12.91-5.72ZM16%2C87.92l12.92%2C8V15.32A32.19%2C32.19%2C0%2C0%2C0%2C16%2C21ZM64.17%2C3.67V86.48l6-3.72a15.3%2C15.3%2C0%2C0%2C0%2C6.89-13V30.65C77.09%2C19.37%2C64.17%2C3.67%2C64.17%2C3.67ZM0%2C69.73a15.27%2C15.27%2C0%2C0%2C0%2C6.89%2C13l6%2C3.72V3.67S0%2C19.37%2C0%2C30.65Z%22/%3E%0A%20%20%3C/g%3E%0A%20%3C/g%3E%0A%3C/svg%3E
+// @icon         https://www.google.com/s2/favicons?sz=64&domain=sentinelone.com
 // ==/UserScript==
 
 (function () {
