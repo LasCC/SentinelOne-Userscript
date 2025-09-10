@@ -404,5 +404,10 @@
         "category" : "Malware & Threats",
         "name" : "Recent ISO Image Mount Activity Detected",
         "query" : "indicator.metadata contains:anycase (\"\\\\Microsoft\\\\Windows\\\\Recent\\\\\") indicator.metadata contains:anycase (\".iso.lnk\", \".img.lnk\", \".vhd.lnk\", \".vhdx.lnk\")\n| group _FirstSeenMs=min(event.time), _LastSeenMs=max(event.time), Count=count() by indicator.name, indicator.metadata, src.process.displayName\n| let _firstSeenNs = _FirstSeenMs * 1000000\n| let _lastSeenNs = _LastSeenMs * 1000000\n| columns  \"first.timestamp\" = _firstSeenNs, \"last.timestamp\" = _lastSeenNs, indicator.name, indicator.metadata, src.process.displayName, Count\n| sort -Count\n| limit 100000"
+    },
+    {
+        "category" : "Malware & Threats",
+        "name" : ".NET ClickOnce installation",
+        "query" : "src.process.name = \"rundll32.exe\" #cmdline contains:anycase \"ShOpenVerbApplication\" #cmdline contains:anycase (\"http\",\".application\")\n| group _FirstSeenMs=min(event.time), _LastSeenMs=max(event.time), Count=count() by endpoint.name, src.process.user, src.process.parent.name, src.process.name, src.process.cmdline, tgt.process.cmdline, event.dns.request\n| let _firstSeenNs = _FirstSeenMs * 1000000\n| let _lastSeenNs = _LastSeenMs * 1000000\n| columns  \"first.timestamp\" = _firstSeenNs, \"last.timestamp\" = _lastSeenNs, endpoint.name, src.process.user, src.process.parent.name, src.process.name, src.process.cmdline, tgt.process.cmdline, event.dns.request, Count\n| sort -Count\n| limit 100000\n"
     }
 ]
