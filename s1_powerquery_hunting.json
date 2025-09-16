@@ -28,7 +28,7 @@
     {
         "category": "Lateral Movement",
         "name": "ATExec was used",
-        "query": "indicator.name contains \"ScheduleTaskRegister\"\n| let taskCode = indicator.metadata.extract_matches('Task: \"\\\\\\\\([A-Za-z0-9]{8})\"').get(0)\n| filter taskCode != null\n| group _FirstSeenMs=min(event.time), _LastSeenMs=max(event.time), Count = count() by endpoint.name, src.process.user, src.process.storyline.id, taskCode, indicator.metadata\n| let _firstSeenNs = _FirstSeenMs * 1000000\n| let _lastSeenNs = _LastSeenMs * 1000000\n| columns  \"first.timestamp\" = _firstSeenNs, \"last.timestamp\" = _lastSeenNs, endpoint.name, src.process.user, src.process.storyline.id, taskCode, indicator.metadata, Count\n| sort -Count\n| limit 100000"
+        "query": "indicator.name contains \"ScheduleTaskRegister\"\n| let taskCode = indicator.metadata.extract_matches('Task: \"\\\\\\\\([A-Za-z0-9]{1,8})\"').get(0)\n| filter taskCode != null\n| group _FirstSeenMs=min(event.time), _LastSeenMs=max(event.time), Count = count() by endpoint.name, src.process.user, src.process.storyline.id, taskCode, indicator.metadata\n| let _firstSeenNs = _FirstSeenMs * 1000000\n| let _lastSeenNs = _LastSeenMs * 1000000\n| columns  \"first.timestamp\" = _firstSeenNs, \"last.timestamp\" = _lastSeenNs, endpoint.name, src.process.user, src.process.storyline.id, taskCode, indicator.metadata, Count\n| sort -Count\n| limit 100000"
     },
     {
         "category": "Credential Access",
