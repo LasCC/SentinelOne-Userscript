@@ -18,6 +18,8 @@
     const PINNED_QUERIES_KEY = "s1_pinned_hunting_queries";
 
     let allFetchedQueries = [];
+    let documentListenerController = null;
+    let fetchInProgress = false;
 
     const listIconSVG = `
     <img src="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2077.09%2095.88%22%20xmlns%3Axlink%3D%22http%3A//www.w3.org/1999/xlink%22%3E%0A%20%3Cdefs%3E%0A%20%20%3Cstyle%3E%0A%20%20%20.cls-1%7Bfill%3A%236b0aea%3Bfill-rule%3Aevenodd%3B%7D%0A%20%20%3C/style%3E%0A%20%3C/defs%3E%0A%20%3Cg%20id%3D%22Layer_2%22%20data-name%3D%22Layer%202%22%3E%0A%20%20%3Cg%20id%3D%22ART%22%3E%0A%20%20%20%3Cpath%20class%3D%22cls-1%22%20d%3D%22M32.08%2C0H45V77.25H32.08ZM48.13%2C95.88l12.91-8V21a32.21%2C32.21%2C0%2C0%2C0-12.91-5.72ZM16%2C87.92l12.92%2C8V15.32A32.19%2C32.19%2C0%2C0%2C0%2C16%2C21ZM64.17%2C3.67V86.48l6-3.72a15.3%2C15.3%2C0%2C0%2C0%2C6.89-13V30.65C77.09%2C19.37%2C64.17%2C3.67%2C64.17%2C3.67ZM0%2C69.73a15.27%2C15.27%2C0%2C0%2C0%2C6.89%2C13l6%2C3.72V3.67S0%2C19.37%2C0%2C30.65Z%22/%3E%0A%20%20%3C/g%3E%0A%20%3C/g%3E%0A%3C/svg%3E" style="height:1rem;" alt="Logo" srcset="">
@@ -58,20 +60,19 @@
         const queryTextarea = document.querySelector(
             '[data-test-id="power-query-input"]'
         );
+        if (!queryTextarea) return;
         const searchButton = document.querySelector(
             '[data-test-id="power-query-search-button"]'
         );
-        if (queryTextarea) {
-            const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
-                window.HTMLTextAreaElement.prototype,
-                "value"
-            ).set;
-            nativeInputValueSetter.call(queryTextarea, query);
-            ["input", "change"].forEach((eventType) =>
-                queryTextarea.dispatchEvent(new Event(eventType, { bubbles: true }))
-            );
-            queryTextarea.focus();
-        }
+        const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+            window.HTMLTextAreaElement.prototype,
+            "value"
+        ).set;
+        nativeInputValueSetter.call(queryTextarea, query);
+        ["input", "change"].forEach((eventType) =>
+            queryTextarea.dispatchEvent(new Event(eventType, { bubbles: true }))
+        );
+        queryTextarea.focus();
         if (searchButton) searchButton.click();
         showNotification("Query executed successfully!");
     }
@@ -481,7 +482,7 @@
                     const pinButton = document.createElement("button");
                     pinButton.className = "hunting-queries-pin-btn";
                     pinButton.innerHTML = starIconSVG;
-                    if (isQueryPinned(queryObj.name)) {
+                    if (pinnedQueryNames.includes(queryObj.name)) {
                         pinButton.classList.add("pinned");
                         pinButton.title = "Unpin query";
                     } else {
@@ -576,10 +577,12 @@
             tableButtonToolbarItem.nextSibling
         );
 
+        let searchDebounceTimer;
         searchInput.addEventListener("input", (e) => {
             const value = e.target.value;
             clearButton.style.display = value ? "block" : "none";
-            renderQueryItems(value);
+            clearTimeout(searchDebounceTimer);
+            searchDebounceTimer = setTimeout(() => renderQueryItems(value), 150);
         });
         searchInput.addEventListener("keydown", (e) => {
             if (e.key === "Escape") closeDropdown();
@@ -603,20 +606,24 @@
                 renderQueryItems(searchInput.value);
             }
         });
+        if (documentListenerController) documentListenerController.abort();
+        documentListenerController = new AbortController();
+        const { signal: docSignal } = documentListenerController;
+
         document.addEventListener("click", (e) => {
             if (
                 !dropdownDiv.contains(e.target) &&
                 dropdownMenu.classList.contains("show")
             )
                 closeDropdown();
-        });
+        }, { signal: docSignal });
 
         document.addEventListener("pinnedQueryChange", () => {
             if (dropdownMenu.classList.contains("show")) {
                 renderTabs();
                 renderQueryItems(searchInput.value);
             }
-        });
+        }, { signal: docSignal });
 
         renderTabs();
         renderQueryItems();
@@ -865,6 +872,7 @@
             method: "GET",
             url: QUERIES_URL,
             onload: function (response) {
+                fetchInProgress = false;
                 try {
                     const queries = JSON.parse(response.responseText);
                     allFetchedQueries = queries;
@@ -878,6 +886,7 @@
                 }
             },
             onerror: function (error) {
+                fetchInProgress = false;
                 console.error("Error fetching queries:", error);
                 allFetchedQueries = null;
                 addCustomQueryButton(null);
@@ -898,7 +907,8 @@
                 const tableButton = powerQueryPage.querySelector(
                     '[data-test-id="graph-style-dropdown"]'
                 );
-                if (toolbar && tableButton) {
+                if (toolbar && tableButton && !fetchInProgress) {
+                    fetchInProgress = true;
                     fetchQueriesAndInject();
                 }
             }
