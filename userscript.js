@@ -1,12 +1,12 @@
 // ==UserScript==
 // @name         SentinelOne: PowerQuery Custom Menu
-// @version      1
+// @version      2
 // @description  Custom menu for threat hunting rules with a compact UI, cell copy on query page, and quick unpin feature.
 // @author       https://github.com/LasCC
 // @match        *://*.sentinelone.net/query*
 // @match        *://*.sentinelone.net/events*
-// @downloadURL  https://raw.githubusercontent.com/LasCC/SentinelOne-Userscript/refs/heads/master/userscript.js
-// @updateURL    https://raw.githubusercontent.com/LasCC/SentinelOne-Userscript/refs/heads/master/userscript.js
+// @downloadURL  https://raw.githubusercontent.com/LasCC/SentinelOne-Userscript/master/userscript.js
+// @updateURL    https://raw.githubusercontent.com/LasCC/SentinelOne-Userscript/master/userscript.js
 // @grant        GM_xmlhttpRequest
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=sentinelone.com
 // ==/UserScript==
