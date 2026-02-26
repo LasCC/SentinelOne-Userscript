@@ -123,7 +123,7 @@
     {
         "category": "Discovery & Reconnaissance",
         "name": "Suspicious Hostname",
-        "query": "(endpoint.name contains:anycase (\"parrot\",\"pentest\",\"redteam\",\"attack\",\"commando\",\"kali\",\"exegol\") OR endpoint.name matches:anycase 'DESKTOP-[A-Z0-9]{2,15}' OR endpoint.name matches:anycase 'LAPTOP-[A-Z0-9]{2,15}' OR endpoint.name matches:anycase 'WIN-[A-Z0-9]{2,15}')\n| group _FirstSeenMs=min(event.time), _LastSeenMs=max(event.time), Count=count() by endpoint.name, event.login.userName\n| let _firstSeenNs = _FirstSeenMs * 1000000\n| let _lastSeenNs = _LastSeenMs * 1000000\n| columns  \"first.timestamp\" = _firstSeenNs, \"last.timestamp\" = _lastSeenNs, endpoint.name, event.login.userName, Count\n| sort -Count\n| limit 100000"
+        "query": "(endpoint.name contains:anycase (\"parrot\",\"pentest\",\"redteam\",\"attack\",\"commando\",\"kali\",\"exegol\") OR endpoint.name matches:anycase 'DESKTOP-[A-Z0-9]{2,15}' OR endpoint.name matches:anycase 'LAPTOP-[A-Z0-9]{2,15}' OR endpoint.name matches:anycase 'WIN-[A-Z0-9]{2,15}') AND not(event.login.userName contains (\"$\",\"UMFD\",\"DWM\"))\n| filter event.login.userName != null\n| group _FirstSeenMs=min(event.time), _LastSeenMs=max(event.time), Count=count() by endpoint.name, event.login.userName\n| let _firstSeenNs = _FirstSeenMs * 1000000\n| let _lastSeenNs = _LastSeenMs * 1000000\n| columns  \"first.timestamp\" = _firstSeenNs, \"last.timestamp\" = _lastSeenNs, endpoint.name, event.login.userName, Count\n| sort -Count\n| limit 100000"
     },
     {
         "category": "Command & Control",
