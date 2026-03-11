@@ -1,3 +1,5 @@
+[![Microsoft Sentinel & Defender Userscript](https://img.shields.io/badge/Also%20available-Microsoft%20Sentinel%20%26%20Defender%20Userscript-0078D4?style=for-the-badge&logo=microsoft)](https://github.com/LasCC/MicrosoftSentinel-Userscript)
+
 # SentinelOne PowerQuery Custom Menu - Userscript
 
 A userscript that enhances the SentinelOne PowerQuery interface with a custom threat hunting button that follow the website UI / UX design interface.
