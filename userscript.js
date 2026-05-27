@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         SentinelOne: PowerQuery Custom Menu
-// @version      2
+// @version      3
 // @description  Custom menu for threat hunting rules with a compact UI, cell copy on query page, and quick unpin feature.
 // @author       https://github.com/LasCC
 // @match        *://*.sentinelone.net/query*
@@ -8,6 +8,9 @@
 // @downloadURL  https://raw.githubusercontent.com/LasCC/SentinelOne-Userscript/master/userscript.js
 // @updateURL    https://raw.githubusercontent.com/LasCC/SentinelOne-Userscript/master/userscript.js
 // @grant        GM_xmlhttpRequest
+// @grant        GM_setValue
+// @grant        GM_getValue
+// @connect      raw.githubusercontent.com
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=sentinelone.com
 // ==/UserScript==
 
@@ -16,10 +19,15 @@
     const QUERIES_URL =
         "https://raw.githubusercontent.com/LasCC/SentinelOne-Userscript/refs/heads/master/s1_powerquery_hunting.json";
     const PINNED_QUERIES_KEY = "s1_pinned_hunting_queries";
+    const CACHE_KEY = "s1_hunting_queries_cache";
+    const CACHE_TS_KEY = "s1_hunting_queries_cache_ts";
+    const CACHE_TTL_MS = 60 * 60 * 1000; // serve cache instantly, refresh in background after 1h
 
     let allFetchedQueries = [];
     let documentListenerController = null;
     let fetchInProgress = false;
+    let renderedSignature = null; // avoids rebuilding the menu when a background refresh returns identical data
+    let pinnedCache = null; // in-memory mirror of localStorage to avoid repeated parse in render loops
 
     const listIconSVG = `
     <img src="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2077.09%2095.88%22%20xmlns%3Axlink%3D%22http%3A//www.w3.org/1999/xlink%22%3E%0A%20%3Cdefs%3E%0A%20%20%3Cstyle%3E%0A%20%20%20.cls-1%7Bfill%3A%236b0aea%3Bfill-rule%3Aevenodd%3B%7D%0A%20%20%3C/style%3E%0A%20%3C/defs%3E%0A%20%3Cg%20id%3D%22Layer_2%22%20data-name%3D%22Layer%202%22%3E%0A%20%20%3Cg%20id%3D%22ART%22%3E%0A%20%20%20%3Cpath%20class%3D%22cls-1%22%20d%3D%22M32.08%2C0H45V77.25H32.08ZM48.13%2C95.88l12.91-8V21a32.21%2C32.21%2C0%2C0%2C0-12.91-5.72ZM16%2C87.92l12.92%2C8V15.32A32.19%2C32.19%2C0%2C0%2C0%2C16%2C21ZM64.17%2C3.67V86.48l6-3.72a15.3%2C15.3%2C0%2C0%2C0%2C6.89-13V30.65C77.09%2C19.37%2C64.17%2C3.67%2C64.17%2C3.67ZM0%2C69.73a15.27%2C15.27%2C0%2C0%2C0%2C6.89%2C13l6%2C3.72V3.67S0%2C19.37%2C0%2C30.65Z%22/%3E%0A%20%20%3C/g%3E%0A%20%3C/g%3E%0A%3C/svg%3E" style="height:1rem;" alt="Logo" srcset="">
@@ -30,13 +38,15 @@
     const checkIconSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
 
     function getPinnedQueries() {
+        if (pinnedCache) return pinnedCache;
         try {
             const pinned = localStorage.getItem(PINNED_QUERIES_KEY);
-            return pinned ? JSON.parse(pinned) : [];
+            pinnedCache = pinned ? JSON.parse(pinned) : [];
         } catch (e) {
             console.error("Could not parse pinned queries from localStorage", e);
-            return [];
+            pinnedCache = [];
         }
+        return pinnedCache;
     }
 
     function isQueryPinned(queryName) {
@@ -44,7 +54,7 @@
     }
 
     function togglePinQuery(queryName) {
-        let pinned = getPinnedQueries();
+        let pinned = getPinnedQueries().slice();
         const index = pinned.indexOf(queryName);
         if (index > -1) {
             pinned.splice(index, 1);
@@ -52,6 +62,7 @@
             pinned.push(queryName);
         }
         localStorage.setItem(PINNED_QUERIES_KEY, JSON.stringify(pinned));
+        pinnedCache = pinned; // keep the in-memory cache in sync
         renderPinnedQueriesSection();
         document.dispatchEvent(new CustomEvent("pinnedQueryChange"));
     }
@@ -293,7 +304,11 @@
         emptyState.style.display = "none";
 
         let activeCategory = "All";
-        let isLoading = true;
+        // The menu is only built once data has resolved (array on success, null on
+        // failure), so we are never in a pending state here. Keeping this false lets
+        // renderQueryItems() fall through to the error UI when predefinedQueries is null,
+        // instead of getting stuck on the loading spinner forever.
+        let isLoading = false;
 
         const categories = ["All", "Pinned"];
         if (Array.isArray(predefinedQueries)) {
@@ -304,7 +319,6 @@
                     .filter((cat) => cat.trim() !== "")
             );
             categories.push(...Array.from(uniqueCategories).sort());
-            isLoading = false;
         }
 
         function updateQueryCount(count) {
@@ -407,9 +421,7 @@
                     queryObj.category === activeCategory;
                 const matchesSearch =
                     !lowerSearchTerm ||
-                    queryObj.name.toLowerCase().includes(lowerSearchTerm) ||
-                    (queryObj.description &&
-                        queryObj.description.toLowerCase().includes(lowerSearchTerm));
+                    queryObj.name.toLowerCase().includes(lowerSearchTerm);
                 return matchesCategory && matchesSearch;
             });
 
@@ -450,7 +462,6 @@
                 queries.forEach((queryObj) => {
                     const queryItem = document.createElement("div");
                     queryItem.className = "hunting-queries-item";
-                    queryItem.setAttribute("data-query", queryObj.query);
 
                     const queryContent = document.createElement("div");
                     queryContent.className = "hunting-queries-item-content";
@@ -460,12 +471,6 @@
                     const queryMeta = document.createElement("div");
                     queryMeta.className = "hunting-queries-item-meta";
 
-                    if (queryObj.description) {
-                        const description = document.createElement("div");
-                        description.className = "hunting-queries-item-description";
-                        description.textContent = queryObj.description;
-                        queryMeta.appendChild(description);
-                    }
                     if (queryObj.category && activeCategory === "All") {
                         const categoryTag = document.createElement("span");
                         categoryTag.className = "hunting-queries-item-category";
@@ -507,14 +512,6 @@
 
                     if (lowerSearchTerm) {
                         highlightSearchTerm(queryName, lowerSearchTerm);
-                        if (queryObj.description) {
-                            const descElement = queryContent.querySelector(
-                                ".hunting-queries-item-description"
-                            );
-                            if (descElement) {
-                                highlightSearchTerm(descElement, lowerSearchTerm);
-                            }
-                        }
                     }
 
                     const handleQuerySelection = (e) => {
@@ -530,6 +527,12 @@
                         if (e.key === "Enter" || e.key === " ") {
                             e.preventDefault();
                             handleQuerySelection(e);
+                        } else if (e.key === "ArrowDown") {
+                            e.preventDefault();
+                            focusAdjacentItem(queryItem, 1);
+                        } else if (e.key === "ArrowUp") {
+                            e.preventDefault();
+                            focusAdjacentItem(queryItem, -1);
                         }
                     });
                     navigationDiv.appendChild(queryItem);
@@ -538,15 +541,46 @@
         }
 
         function highlightSearchTerm(element, searchTerm) {
+            // Build the highlighted markup with the DOM (no innerHTML from data),
+            // so query names are never re-parsed as HTML.
             const text = element.textContent;
-            const regex = new RegExp(
-                `(${searchTerm.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`,
-                "gi"
+            const escaped = searchTerm.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+            const regex = new RegExp(escaped, "gi");
+            const frag = document.createDocumentFragment();
+            let lastIndex = 0;
+            let match;
+            while ((match = regex.exec(text)) !== null) {
+                if (match.index > lastIndex) {
+                    frag.appendChild(
+                        document.createTextNode(text.slice(lastIndex, match.index))
+                    );
+                }
+                const mark = document.createElement("mark");
+                mark.className = "hunting-queries-highlight";
+                mark.textContent = match[0];
+                frag.appendChild(mark);
+                lastIndex = match.index + match[0].length;
+                if (match.index === regex.lastIndex) regex.lastIndex++; // guard against zero-width matches
+            }
+            if (lastIndex < text.length) {
+                frag.appendChild(document.createTextNode(text.slice(lastIndex)));
+            }
+            element.textContent = "";
+            element.appendChild(frag);
+        }
+
+        function focusAdjacentItem(current, direction) {
+            const items = Array.from(
+                navigationDiv.querySelectorAll(".hunting-queries-item")
             );
-            element.innerHTML = text.replace(
-                regex,
-                '<mark class="hunting-queries-highlight">$1</mark>'
-            );
+            const idx = items.indexOf(current);
+            if (idx === -1) return;
+            const next = items[idx + direction];
+            if (next) {
+                next.focus();
+            } else if (direction === -1) {
+                searchInput.focus(); // moving up past the first item returns to search
+            }
         }
 
         function closeDropdown() {
@@ -585,7 +619,15 @@
             searchDebounceTimer = setTimeout(() => renderQueryItems(value), 150);
         });
         searchInput.addEventListener("keydown", (e) => {
-            if (e.key === "Escape") closeDropdown();
+            if (e.key === "Escape") {
+                closeDropdown();
+            } else if (e.key === "ArrowDown") {
+                const first = navigationDiv.querySelector(".hunting-queries-item");
+                if (first) {
+                    e.preventDefault();
+                    first.focus();
+                }
+            }
         });
         clearButton.addEventListener("click", (e) => {
             e.preventDefault();
@@ -629,6 +671,9 @@
         renderQueryItems();
     }
 
+    // Inject the (listener-less) copy button into newly seen cells. The click is
+    // handled by a single delegated listener (see bindCellCopyDelegation), so a
+    // result set with thousands of cells no longer creates thousands of listeners.
     function addCellCopyButtons(cells) {
         if (!window.location.href.includes("/query")) {
             return;
@@ -644,15 +689,27 @@
             button.className = "cell-copy-button";
             button.innerHTML = copyIconSVG;
             button.title = "Copy cell content";
+            button.setAttribute("aria-label", "Copy cell content");
+            cell.appendChild(button);
+        });
+    }
 
-            button.addEventListener("click", (e) => {
+    let cellCopyDelegationBound = false;
+    function bindCellCopyDelegation() {
+        if (cellCopyDelegationBound) return;
+        cellCopyDelegationBound = true;
+        // Capture phase so we copy before SentinelOne's own row/cell click handlers fire.
+        document.addEventListener(
+            "click",
+            (e) => {
+                const button = e.target.closest(".cell-copy-button");
+                if (!button) return;
                 e.stopPropagation();
-                const cellClone = cell.cloneNode(true);
-                const buttonInClone = cellClone.querySelector(".cell-copy-button");
-                if (buttonInClone) {
-                    buttonInClone.remove();
-                }
-                const textToCopy = cellClone.textContent.trim();
+                const cell = button.closest(".BaseTable__row-cell");
+                if (!cell) return;
+                // The button's content is pure SVG (no text node), so it contributes
+                // nothing to textContent — no need to clone the cell to strip it.
+                const textToCopy = (cell.textContent || "").trim();
 
                 navigator.clipboard
                     .writeText(textToCopy)
@@ -673,9 +730,9 @@
                             button.title = "Copy cell content";
                         }, 2000);
                     });
-            });
-            cell.appendChild(button);
-        });
+            },
+            true
+        );
     }
 
     function addCustomStyles() {
@@ -809,7 +866,6 @@
       .hunting-queries-item-content { flex: 1; min-width: 0; }
       .hunting-queries-item-name { font-size: 13px; font-weight: 500; color: var(--s1-N-100-color); line-height: 1.3; }
       .hunting-queries-item-meta { display: flex; flex-direction: column; gap: 4px; margin-top: 2px; }
-      .hunting-queries-item-description { font-size: 11px; color: var(--s1-N-60-color); line-height: 1.3; }
       .hunting-queries-item-category { display: inline-block; font-size: 10px; background: var(--s1-N-15-color); color: var(--s1-N-70-color); padding: 1px 5px; border-radius: var(--s1-border-radius-3); font-weight: 500; width: fit-content; }
       .hunting-queries-item-actions { display: flex; align-items: center; opacity: 0; transition: opacity 0.2s ease; gap: 6px; }
       .hunting-queries-item:hover .hunting-queries-item-actions, .hunting-queries-item:focus-within .hunting-queries-item-actions { opacity: 1; }
@@ -867,35 +923,106 @@
         document.head.appendChild(styles);
     }
 
-    function fetchQueriesAndInject() {
+    function readCache() {
+        if (typeof GM_getValue !== "function") return null;
+        try {
+            const raw = GM_getValue(CACHE_KEY, null);
+            if (!raw) return null;
+            const data = JSON.parse(raw);
+            if (!Array.isArray(data)) return null;
+            const ts = GM_getValue(CACHE_TS_KEY, 0);
+            return { data, fresh: Date.now() - ts < CACHE_TTL_MS };
+        } catch (e) {
+            return null;
+        }
+    }
+
+    function writeCache(queries) {
+        if (typeof GM_setValue !== "function") return;
+        try {
+            GM_setValue(CACHE_KEY, JSON.stringify(queries));
+            GM_setValue(CACHE_TS_KEY, Date.now());
+        } catch (e) {
+            /* storage full or unavailable — non-fatal, we just skip caching */
+        }
+    }
+
+    // (Re)render the menu + pinned section for a given dataset. Skips the rebuild
+    // when a background refresh returns data identical to what's already shown, so
+    // an open dropdown doesn't flicker.
+    function applyQueries(queries) {
+        const list = Array.isArray(queries) ? queries : null;
+        const signature = list
+            ? JSON.stringify(list.map((q) => q.name + " " + (q.query || "")))
+            : "__error__";
+        const container = document.getElementById("custom-queries-button-container");
+        if (signature === renderedSignature && container) return;
+        renderedSignature = signature;
+        allFetchedQueries = list;
+        if (container) container.remove(); // rebuild so the closure captures fresh data
+        addCustomQueryButton(list);
+        injectAndRenderPinnedQueriesSection();
+    }
+
+    function fetchRemoteQueries(callback) {
         GM_xmlhttpRequest({
             method: "GET",
             url: QUERIES_URL,
             onload: function (response) {
-                fetchInProgress = false;
                 try {
-                    const queries = JSON.parse(response.responseText);
-                    allFetchedQueries = queries;
-                    addCustomQueryButton(queries);
-                    injectAndRenderPinnedQueriesSection();
+                    callback(JSON.parse(response.responseText));
                 } catch (e) {
                     console.error("Error parsing queries JSON:", e);
-                    allFetchedQueries = null;
-                    addCustomQueryButton(null);
-                    injectAndRenderPinnedQueriesSection();
+                    callback(null);
                 }
             },
             onerror: function (error) {
-                fetchInProgress = false;
                 console.error("Error fetching queries:", error);
-                allFetchedQueries = null;
-                addCustomQueryButton(null);
-                injectAndRenderPinnedQueriesSection();
+                callback(null);
             },
         });
     }
 
-    const observer = new MutationObserver((mutations, obs) => {
+    function fetchQueriesAndInject() {
+        const cached = readCache();
+        // Cache-first: paint the menu instantly from cache if we have any.
+        if (cached && cached.data) applyQueries(cached.data);
+
+        // Skip the network round-trip when the cache is still fresh.
+        if (cached && cached.fresh) {
+            fetchInProgress = false;
+            return;
+        }
+
+        fetchRemoteQueries((queries) => {
+            fetchInProgress = false;
+            if (Array.isArray(queries)) {
+                writeCache(queries);
+                applyQueries(queries);
+            } else if (!cached || !cached.data) {
+                // Only surface the error UI when we have nothing cached to fall back on.
+                applyQueries(null);
+            }
+        });
+    }
+
+    // Coalesce cell-copy work: many mutations within one animation frame collapse
+    // into a single scan, instead of running querySelectorAll on every added node.
+    let cellScanScheduled = false;
+    function scheduleCellScan() {
+        if (cellScanScheduled) return;
+        cellScanScheduled = true;
+        requestAnimationFrame(() => {
+            cellScanScheduled = false;
+            if (!window.location.href.includes("/query")) return;
+            const cells = document.querySelectorAll(
+                ".BaseTable__row-cell:not(.copy-button-added)"
+            );
+            if (cells.length > 0) addCellCopyButtons(cells);
+        });
+    }
+
+    const observer = new MutationObserver((mutations) => {
         if (!document.getElementById("custom-queries-button-container")) {
             const powerQueryPage = document.querySelector(
                 '.Page.PowerQueries[data-test-id="power-query-page"]'
@@ -915,21 +1042,14 @@
         }
 
         for (const mutation of mutations) {
-            for (const node of mutation.addedNodes) {
-                if (node.nodeType === 1) {
-                    if (node.matches(".BaseTable__row-cell")) {
-                        addCellCopyButtons([node]);
-                    }
-                    const newCells = node.querySelectorAll(
-                        ".BaseTable__row-cell:not(.copy-button-added)"
-                    );
-                    if (newCells.length > 0) {
-                        addCellCopyButtons(newCells);
-                    }
-                }
+            if (mutation.addedNodes.length > 0) {
+                scheduleCellScan();
+                break;
             }
         }
     });
+
+    bindCellCopyDelegation();
 
     const appRoot = document.getElementById("root");
     if (appRoot) {
