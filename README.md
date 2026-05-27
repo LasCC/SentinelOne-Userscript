@@ -19,10 +19,10 @@ A userscript that enhances the SentinelOne PowerQuery interface with a custom th
 ## Installation
 
 1. Install a userscript manager like [Tampermonkey](https://www.tampermonkey.net/) or [Greasemonkey](https://www.greasespot.net/)
-2. Click [here](https://raw.githubusercontent.com/LasCC/SentinelOne-Userscript/refs/heads/master/userscript.js) to install the script
+2. Click [here](https://raw.githubusercontent.com/LasCC/SentinelOne-Userscript/refs/heads/master/sentinelone_query.user.js) to install the script
 3. The script will automatically load when you visit SentinelOne PowerQuery pages
 
-After the first installation there will be a Tampermonkey popup asking to allow the fetch to grab all the detection rules. You need to click the button "Always allow domain".
+The script declares `@connect raw.githubusercontent.com`, so fetching the detection rules is pre-authorized and works without prompting. If your userscript manager still shows a popup asking to allow the fetch, click "Always allow domain".
 
 ![Demo Overview](demo/popup_setup.png)
 

@@ -1,12 +1,12 @@
 // ==UserScript==
 // @name         SentinelOne: PowerQuery Custom Menu
-// @version      3
+// @version      4
 // @description  Custom menu for threat hunting rules with a compact UI, cell copy on query page, and quick unpin feature.
 // @author       https://github.com/LasCC
 // @match        *://*.sentinelone.net/query*
 // @match        *://*.sentinelone.net/events*
-// @downloadURL  https://raw.githubusercontent.com/LasCC/SentinelOne-Userscript/master/userscript.js
-// @updateURL    https://raw.githubusercontent.com/LasCC/SentinelOne-Userscript/master/userscript.js
+// @downloadURL  https://raw.githubusercontent.com/LasCC/SentinelOne-Userscript/master/sentinelone_query.user.js
+// @updateURL    https://raw.githubusercontent.com/LasCC/SentinelOne-Userscript/master/sentinelone_query.user.js
 // @grant        GM_xmlhttpRequest
 // @grant        GM_setValue
 // @grant        GM_getValue
@@ -36,6 +36,43 @@
     const starIconSVG = `<svg class="star-icon" width="14" height="14" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>`;
     const copyIconSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>`;
     const checkIconSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>`;
+
+    // Stable per-category accent colors (loosely MITRE-tactic aligned). Unknown
+    // categories fall back to a deterministic hashed hue so they stay distinct.
+    const CATEGORY_COLORS = {
+        "Credential Access": "#e5484d",
+        "Defense Evasion": "#f76b15",
+        "Defense Evasion & Execution": "#f76b15",
+        "Discovery & Reconnaissance": "#3e63dd",
+        "Lateral Movement": "#e93d82",
+        "Command & Control": "#d6409f",
+        "Exfiltration": "#ab4aba",
+        "Execution & TTPs": "#8e4ec6",
+        "Execution & LOLBAS": "#5b5bd6",
+        "Execution & Persistence": "#7c66dc",
+        "Installation & Persistence": "#12a594",
+        "Privilege Escalation": "#e54666",
+        "Impact": "#dc3b5d",
+        "Malware & Threats": "#ca3214",
+        "Forensics & Investigation": "#3a9e6e",
+        "Helper & Utilities": "#6e6e77",
+        macOS: "#0091ff",
+    };
+
+    function categoryColor(category) {
+        if (!category) return "var(--s1-N-40-color)";
+        if (CATEGORY_COLORS[category]) return CATEGORY_COLORS[category];
+        const lc = category.toLowerCase();
+        if (lc.includes("evasion")) return "#f76b15";
+        if (lc.includes("credential")) return "#e5484d";
+        if (lc.includes("persistence")) return "#12a594";
+        if (lc.includes("execution")) return "#8e4ec6";
+        let h = 0;
+        for (let i = 0; i < category.length; i++) {
+            h = (h * 31 + category.charCodeAt(i)) >>> 0;
+        }
+        return `hsl(${h % 360} 60% 55%)`;
+    }
 
     function getPinnedQueries() {
         if (pinnedCache) return pinnedCache;
@@ -263,8 +300,8 @@
         const searchInput = document.createElement("input");
         searchInput.type = "text";
         searchInput.className = "hunting-queries-search";
-        searchInput.placeholder = "Search queries...";
-        searchInput.setAttribute("aria-label", "Search hunting queries");
+        searchInput.placeholder = "Search name, category or query...";
+        searchInput.setAttribute("aria-label", "Search hunting queries by name, category or query content");
 
         const clearButton = document.createElement("button");
         clearButton.className = "hunting-queries-clear";
@@ -339,8 +376,12 @@
 
                 if (category === "Pinned") {
                     tabButton.innerHTML = `<span class="hunting-queries-tab-content">${starIconSVG} <span>Pinned</span></span>`;
-                } else {
+                } else if (category === "All") {
                     tabButton.innerHTML = `<span class="hunting-queries-tab-content">${category}</span>`;
+                } else {
+                    // Category tabs get a matching color dot.
+                    tabButton.style.setProperty("--cat-color", categoryColor(category));
+                    tabButton.innerHTML = `<span class="hunting-queries-tab-content"><span class="hunting-queries-tab-dot"></span>${category}</span>`;
                 }
 
                 let count = 0;
@@ -421,7 +462,11 @@
                     queryObj.category === activeCategory;
                 const matchesSearch =
                     !lowerSearchTerm ||
-                    queryObj.name.toLowerCase().includes(lowerSearchTerm);
+                    queryObj.name.toLowerCase().includes(lowerSearchTerm) ||
+                    (queryObj.category &&
+                        queryObj.category.toLowerCase().includes(lowerSearchTerm)) ||
+                    (queryObj.query &&
+                        queryObj.query.toLowerCase().includes(lowerSearchTerm));
                 return matchesCategory && matchesSearch;
             });
 
@@ -455,13 +500,31 @@
                 ) {
                     const categoryHeader = document.createElement("div");
                     categoryHeader.className = "hunting-queries-category-header";
+                    categoryHeader.style.setProperty(
+                        "--cat-color",
+                        categoryColor(category)
+                    );
                     categoryHeader.textContent = category;
                     navigationDiv.appendChild(categoryHeader);
                 }
 
                 queries.forEach((queryObj) => {
+                    const isPinned = pinnedQueryNames.includes(queryObj.name);
                     const queryItem = document.createElement("div");
                     queryItem.className = "hunting-queries-item";
+                    if (isPinned) queryItem.classList.add("is-pinned");
+                    // Per-category accent (left border + tag dot) drives the CSS via a custom property.
+                    queryItem.style.setProperty(
+                        "--cat-color",
+                        categoryColor(queryObj.category)
+                    );
+                    // Native tooltip previews the PowerQuery so it can be verified before running.
+                    if (queryObj.query) {
+                        queryItem.title =
+                            queryObj.query.length > 600
+                                ? queryObj.query.slice(0, 600) + "…"
+                                : queryObj.query;
+                    }
 
                     const queryContent = document.createElement("div");
                     queryContent.className = "hunting-queries-item-content";
@@ -474,7 +537,12 @@
                     if (queryObj.category && activeCategory === "All") {
                         const categoryTag = document.createElement("span");
                         categoryTag.className = "hunting-queries-item-category";
-                        categoryTag.textContent = queryObj.category;
+                        const dot = document.createElement("span");
+                        dot.className = "hunting-queries-item-category-dot";
+                        categoryTag.appendChild(dot);
+                        categoryTag.appendChild(
+                            document.createTextNode(queryObj.category)
+                        );
                         queryMeta.appendChild(categoryTag);
                     }
                     queryContent.appendChild(queryName);
@@ -487,7 +555,7 @@
                     const pinButton = document.createElement("button");
                     pinButton.className = "hunting-queries-pin-btn";
                     pinButton.innerHTML = starIconSVG;
-                    if (pinnedQueryNames.includes(queryObj.name)) {
+                    if (isPinned) {
                         pinButton.classList.add("pinned");
                         pinButton.title = "Unpin query";
                     } else {
@@ -500,12 +568,37 @@
                         togglePinQuery(queryObj.name);
                     });
 
+                    const copyButton = document.createElement("button");
+                    copyButton.className = "hunting-queries-copy-btn";
+                    copyButton.innerHTML = copyIconSVG;
+                    copyButton.title = "Copy query to clipboard";
+                    copyButton.setAttribute("aria-label", "Copy query to clipboard");
+                    copyButton.addEventListener("click", (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        navigator.clipboard
+                            .writeText(queryObj.query)
+                            .then(() => {
+                                copyButton.innerHTML = checkIconSVG;
+                                copyButton.classList.add("copied");
+                                showNotification("Query copied to clipboard!");
+                                setTimeout(() => {
+                                    copyButton.innerHTML = copyIconSVG;
+                                    copyButton.classList.remove("copied");
+                                }, 2000);
+                            })
+                            .catch((err) => {
+                                console.error("Failed to copy query:", err);
+                            });
+                    });
+
                     const useButton = document.createElement("button");
                     useButton.className = "hunting-queries-use-btn";
-                    useButton.innerHTML = "Use";
+                    useButton.innerHTML = "Run";
                     useButton.title = "Insert and run this query";
 
                     queryActions.appendChild(pinButton);
+                    queryActions.appendChild(copyButton);
                     queryActions.appendChild(useButton);
                     queryItem.appendChild(queryContent);
                     queryItem.appendChild(queryActions);
@@ -848,6 +941,8 @@
       .hunting-queries-tab:hover { border-color: var(--s1-P-50-color); color: var(--s1-P-50-color); }
       .hunting-queries-tab.active { background: var(--s1-P-50-color); color: var(--s1-const-N-0-color, #fff); border-color: var(--s1-P-50-color); }
       .hunting-queries-tab-content { display: flex; align-items: center; gap: 4px; }
+      .hunting-queries-tab-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--cat-color, var(--s1-N-40-color)); flex-shrink: 0; }
+      .hunting-queries-tab.active .hunting-queries-tab-dot { background: var(--s1-const-N-0-color, #fff); }
       .hunting-queries-tab-badge {
         background: var(--s1-N-20-color); color: var(--s1-N-70-color); font-size: 9px; font-weight: 600;
         padding: 1px 5px; border-radius: 8px; margin-left: 4px;
@@ -859,22 +954,36 @@
       .hunting-queries-category-header {
         padding: 6px var(--s1-distance-5) 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;
         background: var(--s1-N-10-color); color: var(--s1-N-70-color); border-bottom: 1px solid var(--s1-N-20-color); margin-bottom: 4px;
+        border-left: 3px solid var(--cat-color, transparent);
       }
-      .hunting-queries-item { display: flex; align-items: center; justify-content: space-between; padding: 6px var(--s1-distance-5); cursor: pointer; transition: background-color 0.2s ease, border-left-color 0.2s ease; border-left: 3px solid transparent; }
+      .hunting-queries-item { display: flex; align-items: center; justify-content: space-between; padding: 6px var(--s1-distance-5); cursor: pointer; transition: background-color 0.2s ease, border-left-color 0.2s ease; border-left: 3px solid var(--cat-color, transparent); }
       .hunting-queries-item:hover { background: var(--s1-N-10-color); border-left-color: var(--s1-P-50-color); }
       .hunting-queries-item:focus, .hunting-queries-item:focus-within { outline: none; background: var(--s1-N-15-color); border-left-color: var(--s1-P-50-color); }
       .hunting-queries-item-content { flex: 1; min-width: 0; }
       .hunting-queries-item-name { font-size: 13px; font-weight: 500; color: var(--s1-N-100-color); line-height: 1.3; }
       .hunting-queries-item-meta { display: flex; flex-direction: column; gap: 4px; margin-top: 2px; }
-      .hunting-queries-item-category { display: inline-block; font-size: 10px; background: var(--s1-N-15-color); color: var(--s1-N-70-color); padding: 1px 5px; border-radius: var(--s1-border-radius-3); font-weight: 500; width: fit-content; }
-      .hunting-queries-item-actions { display: flex; align-items: center; opacity: 0; transition: opacity 0.2s ease; gap: 6px; }
-      .hunting-queries-item:hover .hunting-queries-item-actions, .hunting-queries-item:focus-within .hunting-queries-item-actions { opacity: 1; }
-      .hunting-queries-pin-btn { background: none; border: none; cursor: pointer; padding: 4px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: var(--s1-N-40-color); transition: all 0.2s ease; }
+      .hunting-queries-item-category { display: inline-flex; align-items: center; gap: 5px; font-size: 10px; background: var(--s1-N-15-color); color: var(--s1-N-70-color); padding: 1px 6px 1px 5px; border-radius: var(--s1-border-radius-3); font-weight: 500; width: fit-content; }
+      .hunting-queries-item-category-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--cat-color, var(--s1-N-40-color)); flex-shrink: 0; }
+      .hunting-queries-item-actions { display: flex; align-items: center; gap: 6px; }
+      /* Pin + copy + run fade in on hover/focus; a pinned star stays lit at rest. */
+      .hunting-queries-pin-btn, .hunting-queries-copy-btn, .hunting-queries-use-btn { opacity: 0; transition: opacity 0.2s ease, background-color 0.2s ease, color 0.2s ease; }
+      .hunting-queries-item:hover .hunting-queries-pin-btn,
+      .hunting-queries-item:hover .hunting-queries-copy-btn,
+      .hunting-queries-item:hover .hunting-queries-use-btn,
+      .hunting-queries-item:focus-within .hunting-queries-pin-btn,
+      .hunting-queries-item:focus-within .hunting-queries-copy-btn,
+      .hunting-queries-item:focus-within .hunting-queries-use-btn { opacity: 1; }
+      .hunting-queries-pin-btn.pinned { opacity: 1; }
+      .hunting-queries-pin-btn { background: none; border: none; cursor: pointer; padding: 4px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: var(--s1-N-40-color); }
       .hunting-queries-pin-btn:hover { background: var(--s1-N-15-color); color: var(--s1-P-50-color); }
       .hunting-queries-pin-btn .star-icon { fill: none; stroke: currentColor; }
       .hunting-queries-pin-btn.pinned .star-icon { color: var(--s1-P-50-color); fill: var(--s1-P-50-color); stroke: var(--s1-P-50-color); }
       .hunting-queries-pin-btn.pinned:hover { color: var(--s1-P-40-color); }
-      .hunting-queries-use-btn { background: var(--s1-P-50-color); color: var(--s1-const-N-0-color, #fff); border: none; padding: 3px 8px; border-radius: var(--s1-border-radius-3); font-size: 11px; font-weight: 500; cursor: pointer; transition: all 0.2s ease; }
+      .hunting-queries-copy-btn { background: none; border: none; cursor: pointer; padding: 4px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: var(--s1-N-40-color); }
+      .hunting-queries-copy-btn:hover { background: var(--s1-N-15-color); color: var(--s1-P-50-color); }
+      .hunting-queries-copy-btn svg { width: 14px; height: 14px; }
+      .hunting-queries-copy-btn.copied { color: var(--s1-G-50-color); }
+      .hunting-queries-use-btn { background: var(--s1-P-50-color); color: var(--s1-const-N-0-color, #fff); border: none; padding: 3px 8px; border-radius: var(--s1-border-radius-3); font-size: 11px; font-weight: 500; cursor: pointer; }
       .hunting-queries-use-btn:hover { background: var(--s1-P-40-color); }
       .hunting-queries-highlight { background: var(--s1-N-20-color); color: var(--s1-N-100-color); padding: 0 2px; border-radius: 2px; font-weight: 500; }
 
